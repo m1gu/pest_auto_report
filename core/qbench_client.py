@@ -1,7 +1,10 @@
 import time
+import re
+import json
 import jwt
 import requests
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 
 from .config import (
     QBENCH_BASE_URL, QBENCH_CLIENT_ID, QBENCH_CLIENT_SECRET,
@@ -18,6 +21,7 @@ class QBenchClient:
         self.base = QBENCH_BASE_URL
         self._token_exp = 0.0
         self.auth_header = {"content_type": "application/json", "Authorization": ""}
+        self._debug_sample_dumped = False
 
     # ---------- Auth ----------
     def _is_token_expired(self) -> bool:
@@ -122,7 +126,9 @@ class QBenchClient:
         data = payload.get("data", [])
         rows = []
         for s in data:
+            self._maybe_dump_sample(s)
             cf = (s.get("custom_fields") or {}) or (s.get("fields") or {})
+            weight = self._extract_sample_weight(s, cf)
             batch_detected = (
                 s.get("batch_number")
                 or cf.get("Batch")
@@ -140,10 +146,139 @@ class QBenchClient:
                 "state": s.get("state"),
                 "date_created": s.get("date_created"),
                 "batch_number": batch_detected or "",
+                "sample_weight": weight,
                 "_raw": s,  # para debug opcional
             })
         return rows
 
+    def _maybe_dump_sample(self, sample: Dict[str, Any]) -> None:
+        if self._debug_sample_dumped:
+            return
+        try:
+            out_path = Path(__file__).resolve().parents[1] / "debug_sample.json"
+            with out_path.open("w", encoding="utf-8") as fh:
+                json.dump(sample, fh, indent=2)
+        except Exception:
+            return
+        else:
+            self._debug_sample_dumped = True
+
+
+    def _extract_sample_weight(self, sample: Dict[str, Any], custom_fields: Dict[str, Any]) -> Any:
+        preferred_keys = (
+            'sample_weight',
+            'Sample_weight',
+            'Sample_weight_mg',
+            'Sample_weight_200mg',
+            'Sample_weight_20mg',
+            'Weight_mg',
+            'Trip_Weight_mg',
+            'Dup_weight_mg',
+            'Weight_g',
+            'Trip_Weight_g',
+            'Dup_weight_g',
+        )
+
+        def normalize_output(value: Any) -> Any:
+            if value is None:
+                return ''
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, (dict, list)):
+                return ''
+            text = str(value).strip()
+            return text
+
+        def parse_float(value: Any) -> Optional[float]:
+            if isinstance(value, (int, float)):
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+            try:
+                return float(str(value).replace(',', '').strip())
+            except Exception:
+                return None
+
+        def test_priority(test: Dict[str, Any]) -> int:
+            assay = test.get('assay') or {}
+            label = str(assay.get('label_abbr') or '').lower()
+            name = str(assay.get('name') or '').lower()
+            if 'pest' in name or label == 'ps' or 'pest' in label:
+                return 2
+            return 0
+
+        def state_bonus(test: Dict[str, Any]) -> int:
+            state = str(test.get('state') or '').lower()
+            return 1 if state == 'completed' else 0
+
+        tests = sample.get('tests') if isinstance(sample, dict) else None
+        candidate_weights = []
+        if isinstance(tests, list):
+            for order, test in enumerate(tests):
+                if not isinstance(test, dict):
+                    continue
+                priority = test_priority(test)
+                bonus = state_bonus(test)
+                for key in preferred_keys:
+                    if key not in test:
+                        continue
+                    raw_value = test.get(key)
+                    normalized = normalize_output(raw_value)
+                    if normalized == '':
+                        continue
+                    numeric = parse_float(normalized)
+                    closeness = abs((numeric or 0.0) - 500.0) if numeric is not None else float('inf')
+                    candidate_weights.append((
+                        -priority,
+                        -bonus,
+                        closeness,
+                        order,
+                        normalized,
+                    ))
+                worksheet = test.get('worksheet_data')
+                if isinstance(worksheet, dict):
+                    for key, value in worksheet.items():
+                        normalized = normalize_output(value)
+                        if normalized == '':
+                            continue
+                        numeric = parse_float(normalized)
+                        closeness = abs((numeric or 0.0) - 500.0) if numeric is not None else float('inf')
+                        candidate_weights.append((
+                            -priority,
+                            -bonus,
+                            closeness,
+                            order,
+                            normalized,
+                        ))
+        if candidate_weights:
+            candidate_weights.sort()
+            return candidate_weights[0][-1]
+
+        def search_container(container: Dict[str, Any] | None) -> Any:
+            if not isinstance(container, dict):
+                return ''
+            for key, value in container.items():
+                if not isinstance(key, str):
+                    continue
+                lower = key.lower()
+                if 'weight' in lower or 'peso' in lower:
+                    normalized = normalize_output(value)
+                    if normalized != '':
+                        return normalized
+            return ''
+
+        for container in (
+            custom_fields,
+            sample.get('custom_fields') if isinstance(sample, dict) else None,
+            sample.get('fields') if isinstance(sample, dict) else None,
+            sample,
+        ):
+            result = search_container(container)
+            if result != '':
+                return result
+
+        return ''
     def _extract_sample_ids_from_batch(self, payload: Dict[str, Any]) -> List[str]:
         ids: List[str] = []
         seen = set()

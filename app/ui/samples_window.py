@@ -20,15 +20,16 @@ class SamplesDialog(QDialog):
 
     def _populate(self, df):
         # columnas mostradas
-        cols = ["batch_number", "id", "custom_formatted_id", "sample_name", "matrix_type", "state", "date_created"]
-        headers = ["Batch", "ID", "Formatted ID", "Sample", "Matrix", "State", "Date created"]
+        cols = ["batch_number", "id", "custom_formatted_id", "sample_name", "matrix_type", "sample_weight", "state", "date_created"]
+        headers = ["Batch", "ID", "Formatted ID", "Sample", "Matrix", "Sample weight", "State", "Date created"]
         self.table.setColumnCount(len(cols))
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(len(df))
         for i, row in df.iterrows():
             for j, col in enumerate(cols):
                 val = row.get(col, "")
-                item = QTableWidgetItem("" if val is None else str(val))
+                display = "" if val is None or val != val else str(val)
+                item = QTableWidgetItem(display)
                 item.setFlags(item.flags() ^ Qt.ItemIsEditable)
                 self.table.setItem(i, j, item)
         self.table.resizeColumnsToContents()
