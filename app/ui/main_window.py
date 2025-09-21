@@ -4,6 +4,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from pathlib import Path
+from PySide6.QtCore import Qt, QThread
+from app.workers.qbench_fetch_worker import QBenchFetchWorker
+from app.ui.samples_window import SamplesDialog
 
 class MainWindow(QMainWindow):
     def __init__(self, user_email: str):
@@ -40,6 +43,9 @@ class MainWindow(QMainWindow):
         self.btn_salir = QPushButton("Cerrar sesión")
         self.btn_salir.clicked.connect(self.close)
         nav.addWidget(self.btn_procesar); nav.addStretch(1); nav.addWidget(self.btn_salir)
+        self.btn_qbench = QPushButton("Buscar en QBench")
+        self.btn_qbench.clicked.connect(self._start_qbench_search)
+        nav.addWidget(self.btn_qbench)
         lay.addLayout(nav)
 
         self.setStatusBar(QStatusBar(self))
@@ -49,3 +55,50 @@ class MainWindow(QMainWindow):
         if path:
             self._excel_path = Path(path)
             self.lbl_excel.setText(self._excel_path.name)
+
+    def _start_qbench_search(self):
+        batches_raw = self.edit_batches.text().strip()
+        if not batches_raw:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "QBench", "Ingresa al menos un batch number.")
+            return
+        batches = [b for b in batches_raw.split() if b.strip()]
+        self.statusBar().showMessage("Conectando a QBench…")
+        self.btn_qbench.setDisabled(True)
+
+        self._qb_thread = QThread()
+        self._qb_worker = QBenchFetchWorker(batches)
+        self._qb_worker.moveToThread(self._qb_thread)
+        self._qb_worker.progressed.connect(self._on_qb_progress)
+        self._qb_worker.finished.connect(self._on_qb_finished)
+        self._qb_thread.started.connect(self._qb_worker.run)
+        self._qb_thread.start()
+
+    def _on_qb_progress(self, msg: str):
+        self.statusBar().showMessage(msg)
+
+    def _on_qb_finished(self, ok: bool, df_or_none, err: str):
+        self._qb_thread.quit()
+        self._qb_thread.wait()
+        self._qb_thread = None
+        self._qb_worker = None
+        self.btn_qbench.setDisabled(False)
+        # deja el último progreso visible un par de segundos
+        # self.statusBar().clearMessage()
+
+        from PySide6.QtWidgets import QMessageBox
+        if not ok:
+            QMessageBox.critical(self, "QBench", f"Falló la búsqueda en QBench.\n\n{err}")
+            return
+
+        # Si no hay resultados, abre de todos modos para ver columnas vacías;
+        # así confirmamos que la llamada funcionó.
+        import pandas as pd
+        df = df_or_none if df_or_none is not None else pd.DataFrame()
+        try:
+            from app.ui.samples_window import SamplesDialog
+            dlg = SamplesDialog(df, self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "QBench", f"No se pudo mostrar la tabla: {e}")
+

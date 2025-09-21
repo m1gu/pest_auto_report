@@ -1,0 +1,14 @@
+{
+    "chatgpt.commentCodeLensEnabled": true,
+
+    // No pedir aprobación paso a paso
+    "openai.agent.requireConfirmation": false,
+
+    // Aplicar cambios en archivos sin preguntar
+    "openai.agent.confirmFileEdits": false,
+    "openai.agent.autoApplyFileEdits": true,
+
+    // Ejecutar comandos en terminal sin confirmar
+    "openai.agent.confirmTerminalCommands": false,
+    "openai.agent.autoRunTerminalCommands": true
+}

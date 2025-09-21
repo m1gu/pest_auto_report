@@ -11,6 +11,14 @@ APP_ENV  = os.getenv("APP_ENV", "dev")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
+# QBench
+QBENCH_BASE_URL      = os.getenv("QBENCH_BASE_URL", "").rstrip("/")
+QBENCH_CLIENT_ID     = os.getenv("QBENCH_CLIENT_ID", "")
+QBENCH_CLIENT_SECRET = os.getenv("QBENCH_CLIENT_SECRET", "")
+QBENCH_JWT_LEEWAY_S  = int(os.getenv("QBENCH_JWT_LEEWAY_S", "20"))
+QBENCH_JWT_TTL_S     = int(os.getenv("QBENCH_JWT_TTL_S", "3580"))
+
+
 def ensure_env():
     missing = []
     if not SUPABASE_URL: missing.append("SUPABASE_URL")
