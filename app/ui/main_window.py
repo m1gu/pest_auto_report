@@ -3,31 +3,15 @@ from typing import Any, Dict, List
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QStatusBar, QMessageBox, QTableWidget,
-    QTableWidgetItem, QStyledItemDelegate, QStyleOptionViewItem
+    QTableWidgetItem
 )
-from PySide6.QtCore import QThread
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QThread, Qt
+from PySide6.QtGui import QColor, QBrush
 from pathlib import Path
 
 from app.workers.batch_process_worker import BatchProcessWorker
 from app.services.storage import fetch_saved_samples, save_samples
 
-
-class StatusColorDelegate(QStyledItemDelegate):
-    PASS_COLOR = QColor("#0a7a28")
-    FAIL_COLOR = QColor("#b00020")
-
-    def paint(self, painter, option, index):
-        opt = QStyleOptionViewItem(option)
-        palette = QPalette(opt.palette)
-        value = str(index.data() or "").strip().lower()
-        if value in ("Pass", "Fail"):
-            color = self.PASS_COLOR if value == "Pass" else self.FAIL_COLOR
-            for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
-                palette.setColor(group, QPalette.Text, color)
-                palette.setColor(group, QPalette.HighlightedText, color)
-        opt.palette = palette
-        super().paint(painter, opt, index)
 
 
 class MainWindow(QMainWindow):
@@ -99,9 +83,9 @@ class MainWindow(QMainWindow):
         left_container.addWidget(results_title)
 
         self.results_table = QTableWidget(0, 4)
+        self.results_table = QTableWidget(0, 4)
         self.results_table.setHorizontalHeaderLabels(["Sample", "Componente", "Estado", "DIL"])
         self.results_table.horizontalHeader().setStretchLastSection(True)
-        self.results_table.setItemDelegateForColumn(2, StatusColorDelegate(self.results_table))
         left_container.addWidget(self.results_table)
 
         self.btn_export = QPushButton("Generar reportes")
@@ -234,6 +218,15 @@ class MainWindow(QMainWindow):
             self.results_table.setItem(r, 1, QTableWidgetItem(component_val))
 
             status_item = QTableWidgetItem(status_val)
+            status_lower = status_val.strip().lower()
+            if status_lower == "pass":
+                status_item.setForeground(QBrush(QColor(0, 255, 0)))
+                status_item.setData(Qt.ForegroundRole, QColor("#0a7a28"))
+                
+            elif status_lower == "fail":
+                status_item.setData(Qt.ForegroundRole, QColor("#b00020"))
+                status_item.setForeground(QColor("red"))
+            
             self.results_table.setItem(r, 2, status_item)
 
             self.results_table.setItem(r, 3, QTableWidgetItem(dil_val))

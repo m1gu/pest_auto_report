@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
 import datetime
+import re
 from openpyxl.utils import get_column_letter
 
 LOQ = 0.1
@@ -94,6 +95,7 @@ class ProcessedSample:
     batch_number: Optional[str]
     sample_name: Optional[str]
     custom_formatted_id: Optional[str]
+    sample_date: Optional[str]
     dilution_factor: Optional[float]
     mass_mg: Optional[float]
     results: List[ProcessedAnalyte]
@@ -284,6 +286,7 @@ def process_batch_dataframe(
                 batch_number=info.get("batch_number"),
                 sample_name=info.get("sample_name"),
                 custom_formatted_id=info.get("custom_formatted_id"),
+                sample_date=info.get("sample_date"),
                 dilution_factor=dilution_factor,
                 mass_mg=mass_mg,
                 results=analyte_results,
@@ -292,6 +295,43 @@ def process_batch_dataframe(
 
     return BatchProcessOutput(samples=samples, display_rows=display_rows)
 
+
+
+
+def _normalize_component_name(name: str) -> str:
+    name = (name or '').strip()
+    return re.sub(r'\s+\d+$', '', name)
+
+
+def build_full_analyte_table(sample: ProcessedSample) -> pd.DataFrame:
+    existing = { _normalize_component_name(result.component): result for result in sample.results }
+    rows: List[Dict[str, Any]] = []
+    for analyte in ANALYTES:
+        result = existing.get(analyte)
+        if result is None:
+            rows.append(
+                {
+                    'Analyte Name': analyte,
+                    'Analyte Amount': 0.0,
+                    'LOQ': LOQ,
+                    'State Limit': STATE_LIMITS.get(analyte, 'N/A'),
+                    'Final Result': 'ND',
+                    'Status': 'Pass',
+                }
+            )
+            continue
+
+        rows.append(
+            {
+                'Analyte Name': analyte,
+                'Analyte Amount': result.calc_conc,
+                'LOQ': LOQ,
+                'State Limit': STATE_LIMITS.get(analyte, 'N/A'),
+                'Final Result': result.final_result,
+                'Status': result.status,
+            }
+        )
+    return pd.DataFrame(rows)
 
 def build_results_dataframe(sample: ProcessedSample) -> pd.DataFrame:
     rows = []
@@ -320,8 +360,7 @@ def export_sample_to_excel(sample: ProcessedSample, output_dir: Path | str) -> P
     safe_sample = safe_sample.strip() or "NoSampleNum"
     file_path = output_dir / f"{today}_{safe_sample}_PSQuants.xlsx"
 
-    df_results = build_results_dataframe(sample)
-    df_results = df_results[["Analyte Name", "Analyte Amount", "LOQ", "State Limit", "Final Result", "Status"]]
+    df_results = build_full_analyte_table(sample)
 
     dilution_factor = sample.dilution_factor if sample.dilution_factor is not None else 0.0
     mass_in_grams = (sample.mass_mg or 0.0) / 1000.0
@@ -329,7 +368,7 @@ def export_sample_to_excel(sample: ProcessedSample, output_dir: Path | str) -> P
     sample_info = {
         "Sample Number:": sample.sample,
         "Sample Name:": sample.sample_name or "",
-        "Custom ID:": sample.custom_formatted_id or "",
+        "Sample Date:": sample.sample_date or "",
         "Batch Number:": sample.batch_number or "",
         "Dilution Factor:": dilution_factor,
         "Mass (g):": mass_in_grams,

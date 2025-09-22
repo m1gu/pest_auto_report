@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -20,7 +21,7 @@ class BatchProcessWorker(QObject):
         self.batches = [b.strip() for b in batches if b.strip()]
         self.excel_path = Path(excel_path)
 
-    def _collect_sample_info(self, client: QBenchClient) -> Dict[str, Dict[str, object]]:
+    def _collect_sample_info(self, client: QBenchClient, sample_date: str | None = None) -> Dict[str, Dict[str, object]]:
         sample_info: Dict[str, Dict[str, object]] = {}
         for batch in self.batches:
             self.progressed.emit(f"Consultando batch {batch} en QBench...")
@@ -49,11 +50,27 @@ class BatchProcessWorker(QObject):
                     'sample_name': row.get('sample_name'),
                     'custom_formatted_id': row.get('custom_formatted_id'),
                     'batch_number': row.get('batch_number') or batch,
+                    'sample_date': sample_date,
                 }
                 for key in keys:
                     if key and key not in sample_info:
-                        sample_info[key] = info
+                        sample_info[key] = dict(info)
         return sample_info
+
+    def _extract_sample_date(self) -> str | None:
+        name = self.excel_path.name
+        match = re.search(r'(20\d{2})(\d{2})(\d{2})', name)
+        if not match:
+            return None
+        year, month, day = match.groups()
+        try:
+            month_i = int(month)
+            day_i = int(day)
+        except ValueError:
+            return None
+        if not (1 <= month_i <= 12 and 1 <= day_i <= 31):
+            return None
+        return f"{year}-{month}-{day}"
 
     def _fallback_get_batch_samples(self, client: QBenchClient, batch_id: str, page_size: int = 100):
         params = {'include': 'samples'}
@@ -121,7 +138,8 @@ class BatchProcessWorker(QObject):
                 raise FileNotFoundError(f'Archivo Excel no encontrado: {self.excel_path}')
 
             client = QBenchClient()
-            sample_info = self._collect_sample_info(client)
+            sample_date = self._extract_sample_date()
+            sample_info = self._collect_sample_info(client, sample_date)
             if not sample_info:
                 raise RuntimeError('QBench no devolvio samples para los batches indicados.')
 
