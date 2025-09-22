@@ -303,40 +303,6 @@ class QBenchClient:
 
         return ids
 
-    def search_samples_by_batch(self, batch_number: str, page_size: int = 200):
-        """
-        Estrategia:
-          A) Intentar SIN 'search' (compatible con tu script).
-          B) Filtrar en cliente por batch en campos conocidos.
-          C) (Opcional) Intentar con 'search'; si 400, ignorarlo y quedarnos con A.
-        Retorna: (rows_filtradas, debug_msg)
-        """
-        # --- A) petición sin 'search' (como tu script que funciona) ---
-        params = {
-            "page_size": page_size,
-            "page_num": 1,
-            "sort_by": "date_created",
-            "sort_order": "desc",
-        }
-        payload = self.get("sample", params=params)
-        rows = self._sample_rows_from_payload(payload)
-        dbg = [f"GET /sample sin search → {len(rows)} items"]
-
-        # Filtrado en cliente por coincidencia de texto
-        # Ajusta aquí el criterio exacto que te sirva:
-        bn = str(batch_number).strip()
-        matches = []
-        for r in rows:
-            bucket = " ".join([
-                str(r.get("batch_number", "")),
-                str(r.get("custom_formatted_id", "")),
-                str(r.get("sample_name", "")),
-            ])
-            if bn and bn in bucket:
-                matches.append(r)
-
-        debug_msg = " | ".join(dbg) + f" | matches={len(matches)}"
-        return matches, debug_msg
 
     def get_batch_samples(self, batch_id: str, page_size: int = 100):
         """Obtiene los samples asociados a un batch consultando el endpoint de batches y luego cada sample."""

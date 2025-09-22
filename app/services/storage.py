@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, List, Dict
 
 from app.services.ps_processing import ProcessedSample
 
@@ -73,3 +73,14 @@ def save_samples(samples: Iterable[ProcessedSample], sample_metadata: Mapping[st
             )
         conn.commit()
 
+
+def fetch_saved_samples(limit: int = 50) -> List[Dict[str, object]]:
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        query = (
+            "SELECT batch_number, sample_number, custom_formatted_id, sample_name, created_at "
+            "FROM reports ORDER BY datetime(created_at) DESC LIMIT ?"
+        )
+        rows = conn.execute(query, (limit,)).fetchall()
+    return [dict(row) for row in rows]

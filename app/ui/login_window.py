@@ -4,10 +4,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from core.supa import get_client
 
+
 class LoginDialog(QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Iniciar sesión")
+        self.setWindowTitle("Iniciar sesion")
         self.setModal(True)
         self.resize(380, 220)
 
@@ -15,8 +16,8 @@ class LoginDialog(QDialog):
         title = QLabel("<b>Acceso</b>"); title.setAlignment(Qt.AlignCenter)
         lay.addWidget(title)
 
-        self.email = QLineEdit(); self.email.setPlaceholderText("Email")
-        self.pwd = QLineEdit(); self.pwd.setPlaceholderText("Contraseña"); self.pwd.setEchoMode(QLineEdit.Password)
+        self.email = QLineEdit(); self.email.setPlaceholderText("Email"); self.email.setText("mrodriguezegues@gmail.com")
+        self.pwd = QLineEdit(); self.pwd.setPlaceholderText("Contrasena"); self.pwd.setEchoMode(QLineEdit.Password); self.pwd.setText("12345678")
         lay.addWidget(self.email); lay.addWidget(self.pwd)
 
         row = QHBoxLayout()
@@ -38,10 +39,10 @@ class LoginDialog(QDialog):
         email = self.email.text().strip()
         pwd = self.pwd.text().strip()
         if not email or not pwd:
-            QMessageBox.warning(self, "Login", "Ingresa email y contraseña.")
+            QMessageBox.warning(self, "Login", "Ingresa email y contrasena.")
             return
         self.btn_login.setDisabled(True)
-        self.msg.setText("Verificando credenciales…")
+        self.msg.setText("Verificando credenciales...")
         try:
             supa = get_client()
             res = supa.auth.sign_in_with_password({"email": email, "password": pwd})

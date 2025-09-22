@@ -8,7 +8,6 @@ from PySide6.QtCore import QObject, Signal
 
 from app.services import ps_processing
 from app.services.ps_processing import BatchProcessOutput, normalize_sample_id_text
-from app.services.storage import save_samples
 from core.qbench_client import QBenchClient, QBenchError
 
 
@@ -149,13 +148,13 @@ class BatchProcessWorker(QObject):
             if not output.samples:
                 raise RuntimeError('No se generaron resultados a partir del Excel proporcionado.')
 
-            self.progressed.emit('Guardando resultados en base de datos...')
-            save_samples(output.samples, sample_info)
+            self.progressed.emit('Resultados listos para exportar.')
 
             payload = {
                 'display_rows': output.display_rows,
                 'sample_count': len(output.samples),
                 'samples': output.samples,
+                'sample_metadata': sample_info,
             }
             self.finished.emit(True, payload, '')
         except (QBenchError, ValueError, FileNotFoundError, RuntimeError) as e:
