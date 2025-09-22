@@ -164,121 +164,84 @@ class QBenchClient:
             self._debug_sample_dumped = True
 
 
-    def _extract_sample_weight(self, sample: Dict[str, Any], custom_fields: Dict[str, Any]) -> Any:
-        preferred_keys = (
-            'sample_weight',
-            'Sample_weight',
-            'Sample_weight_mg',
-            'Sample_weight_200mg',
-            'Sample_weight_20mg',
-            'Weight_mg',
-            'Trip_Weight_mg',
-            'Dup_weight_mg',
-            'Weight_g',
-            'Trip_Weight_g',
-            'Dup_weight_g',
-        )
 
-        def normalize_output(value: Any) -> Any:
-            if value is None:
-                return ''
-            if isinstance(value, (int, float)):
-                return value
-            if isinstance(value, (dict, list)):
-                return ''
-            text = str(value).strip()
-            return text
-
-        def parse_float(value: Any) -> Optional[float]:
-            if isinstance(value, (int, float)):
+    def _extract_sample_weight(self, sample: Dict[str, Any], custom_fields: Dict[str, Any]) -> str:
+            def normalize(value: Any) -> str:
+                if value is None:
+                    return ""
+                if isinstance(value, (int, float)):
+                    if isinstance(value, float) and value != value:  # NaN check
+                        return ""
+                    text = f"{value}"
+                    if text.endswith(".0"):
+                        try:
+                            if float(text).is_integer():
+                                return str(int(float(text)))
+                        except ValueError:
+                            pass
+                    return text
+                if isinstance(value, str):
+                    text = value.strip()
+                    if not text:
+                        return ""
+                    match = re.search(r"-?\d+(?:[.,]\d+)?", text)
+                    if match:
+                        return match.group(0).replace(",", "")
+                    return text
                 try:
-                    return float(value)
-                except (TypeError, ValueError):
-                    return None
-            try:
-                return float(str(value).replace(',', '').strip())
-            except Exception:
-                return None
+                    text = str(value).strip()
+                except Exception:
+                    return ""
+                return text
 
-        def test_priority(test: Dict[str, Any]) -> int:
-            assay = test.get('assay') or {}
-            label = str(assay.get('label_abbr') or '').lower()
-            name = str(assay.get('name') or '').lower()
-            if 'pest' in name or label == 'ps' or 'pest' in label:
-                return 2
-            return 0
-
-        def state_bonus(test: Dict[str, Any]) -> int:
-            state = str(test.get('state') or '').lower()
-            return 1 if state == 'completed' else 0
-
-        tests = sample.get('tests') if isinstance(sample, dict) else None
-        candidate_weights = []
-        if isinstance(tests, list):
-            for order, test in enumerate(tests):
-                if not isinstance(test, dict):
-                    continue
-                priority = test_priority(test)
-                bonus = state_bonus(test)
-                for key in preferred_keys:
-                    if key not in test:
+            tests = sample.get("tests") if isinstance(sample, dict) else None
+            if isinstance(tests, list):
+                for test in tests:
+                    if not isinstance(test, dict):
                         continue
-                    raw_value = test.get(key)
-                    normalized = normalize_output(raw_value)
-                    if normalized == '':
+                    assay = test.get("assay") or {}
+                    title = str((assay.get("title") or "")).strip().lower()
+                    if "pesticide" not in title:
                         continue
-                    numeric = parse_float(normalized)
-                    closeness = abs((numeric or 0.0) - 500.0) if numeric is not None else float('inf')
-                    candidate_weights.append((
-                        -priority,
-                        -bonus,
-                        closeness,
-                        order,
-                        normalized,
-                    ))
-                worksheet = test.get('worksheet_data')
-                if isinstance(worksheet, dict):
-                    for key, value in worksheet.items():
-                        normalized = normalize_output(value)
-                        if normalized == '':
-                            continue
-                        numeric = parse_float(normalized)
-                        closeness = abs((numeric or 0.0) - 500.0) if numeric is not None else float('inf')
-                        candidate_weights.append((
-                            -priority,
-                            -bonus,
-                            closeness,
-                            order,
-                            normalized,
-                        ))
-        if candidate_weights:
-            candidate_weights.sort()
-            return candidate_weights[0][-1]
-
-        def search_container(container: Dict[str, Any] | None) -> Any:
-            if not isinstance(container, dict):
-                return ''
-            for key, value in container.items():
-                if not isinstance(key, str):
-                    continue
-                lower = key.lower()
-                if 'weight' in lower or 'peso' in lower:
-                    normalized = normalize_output(value)
-                    if normalized != '':
+                    weight = test.get("sample_weight")
+                    normalized = normalize(weight)
+                    if normalized:
                         return normalized
-            return ''
 
-        for container in (
-            custom_fields,
-            sample.get('custom_fields') if isinstance(sample, dict) else None,
-            sample.get('fields') if isinstance(sample, dict) else None,
-            sample,
-        ):
-            result = search_container(container)
-            if result != '':
-                return result
+            direct_weight = normalize(sample.get("sample_weight") if isinstance(sample, dict) else None)
+            if direct_weight:
+                return direct_weight
 
-        return ''
+            weight_keys = [
+                "sample_weight",
+                "Sample Weight",
+                "Sample Weight (mg)",
+                "Sample Weight (g)",
+                "SampleWeight",
+                "Sample Mass",
+                "Sample mass",
+                "Mass (mg)",
+                "Mass_mg",
+                "Mass",
+            ]
+            if isinstance(custom_fields, dict):
+                for key in weight_keys:
+                    if key in custom_fields:
+                        normalized = normalize(custom_fields.get(key))
+                        if normalized:
+                            return normalized
+                for key, value in custom_fields.items():
+                    if not isinstance(key, str):
+                        continue
+                    lower_key = key.lower()
+                    if "weight" in lower_key and "trip" not in lower_key:
+                        normalized = normalize(value)
+                        if normalized:
+                            return normalized
+
+            return ""
+
+
     def _extract_sample_ids_from_batch(self, payload: Dict[str, Any]) -> List[str]:
         ids: List[str] = []
         seen = set()
