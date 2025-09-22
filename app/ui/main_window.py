@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QStatusBar, QMessageBox, QTableWidget,
-    QTableWidgetItem
+    QTableWidgetItem, QProgressBar
 )
 from PySide6.QtCore import QThread, Qt
 from PySide6.QtGui import QColor, QBrush
@@ -112,6 +112,45 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_container, stretch=2)
 
         self.setStatusBar(QStatusBar(self))
+        self._init_loading_overlay(central)
+
+
+
+
+    def _init_loading_overlay(self, parent: QWidget) -> None:
+        self._overlay = QWidget(parent)
+        self._overlay.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        self._overlay.hide()
+        layout = QVBoxLayout(self._overlay)
+        layout.setAlignment(Qt.AlignCenter)
+
+        self._overlay_label = QLabel("Procesando...")
+        self._overlay_label.setAlignment(Qt.AlignCenter)
+        self._overlay_label.setStyleSheet("color: #ffffff; font-size: 18px;")
+        layout.addWidget(self._overlay_label)
+
+        self._overlay_progress = QProgressBar()
+        self._overlay_progress.setRange(0, 0)
+        self._overlay_progress.setTextVisible(False)
+        self._overlay_progress.setFixedWidth(220)
+        layout.addWidget(self._overlay_progress)
+
+        self._update_overlay_geometry()
+
+    def _update_overlay_geometry(self) -> None:
+        if hasattr(self, "_overlay") and self._overlay and self.centralWidget():
+            self._overlay.setGeometry(self.centralWidget().rect())
+
+    def _show_loading_overlay(self, message: str = "Procesando...") -> None:
+        if hasattr(self, "_overlay"):
+            self._overlay_label.setText(message)
+            self._overlay.show()
+            self._overlay.raise_()
+            self._update_overlay_geometry()
+
+    def _hide_loading_overlay(self) -> None:
+        if hasattr(self, "_overlay"):
+            self._overlay.hide()
 
     def _pick_excel(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -153,6 +192,7 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage("Iniciando procesamiento...")
+        self._show_loading_overlay("Procesando...")
         self._set_processing_controls_enabled(False)
 
         self._process_thread = QThread()
@@ -166,6 +206,8 @@ class MainWindow(QMainWindow):
     def _on_process_progress(self, msg: str) -> None:
         if msg:
             self.statusBar().showMessage(msg)
+            if hasattr(self, '_overlay') and self._overlay.isVisible():
+                self._overlay_label.setText(msg)
 
     def _on_process_finished(self, ok: bool, payload, err: str) -> None:
         if self._process_thread:
@@ -174,6 +216,8 @@ class MainWindow(QMainWindow):
             self._process_thread = None
         self._process_worker = None
         self._set_processing_controls_enabled(True)
+
+        self._hide_loading_overlay()
 
         if not ok:
             QMessageBox.critical(self, "Procesamiento", err or "No fue posible completar el proceso.")
@@ -220,12 +264,14 @@ class MainWindow(QMainWindow):
             status_item = QTableWidgetItem(status_val)
             status_lower = status_val.strip().lower()
             if status_lower == "pass":
-                status_item.setForeground(QBrush(QColor(0, 255, 0)))
-                status_item.setData(Qt.ForegroundRole, QColor("#0a7a28"))
+                status_item.setForeground(QBrush(QColor("#0a7a28")))
+                #status_item.setData(Qt.ForegroundRole, QColor("#0a7a28"))
+                #print("Color verde")
                 
             elif status_lower == "fail":
-                status_item.setData(Qt.ForegroundRole, QColor("#b00020"))
-                status_item.setForeground(QColor("red"))
+                status_item.setForeground(QBrush(QColor("#b00020")))
+                #status_item.setData(Qt.ForegroundRole, QColor("#b00020"))
+                #print("Color rojo")
             
             self.results_table.setItem(r, 2, status_item)
 
@@ -255,6 +301,12 @@ class MainWindow(QMainWindow):
             self.saved_table.setItem(idx, 4, QTableWidgetItem(created))
 
         self.saved_table.resizeColumnsToContents()
+
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_overlay_geometry()
+
 
     def _export_reports(self) -> None:
         if not self._last_samples:
