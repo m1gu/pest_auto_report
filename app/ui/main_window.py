@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QProgressBar
 )
 from PySide6.QtCore import QThread, Qt
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtGui import QColor
 from pathlib import Path
 
 from app.workers.batch_process_worker import BatchProcessWorker
@@ -196,7 +196,7 @@ class MainWindow(QMainWindow):
         self._set_processing_controls_enabled(False)
 
         self._process_thread = QThread()
-        self._process_worker = BatchProcessWorker(batches, self._excel_path)
+        self._process_worker = BatchProcessWorker(batches, self._excel_path, self.user_email)
         self._process_worker.moveToThread(self._process_thread)
         self._process_worker.progressed.connect(self._on_process_progress)
         self._process_worker.finished.connect(self._on_process_finished)
@@ -264,15 +264,9 @@ class MainWindow(QMainWindow):
             status_item = QTableWidgetItem(status_val)
             status_lower = status_val.strip().lower()
             if status_lower == "pass":
-                status_item.setForeground(QBrush(QColor("#0a7a28")))
-                #status_item.setData(Qt.ForegroundRole, QColor("#0a7a28"))
-                #print("Color verde")
-                
+                status_item.setData(Qt.ForegroundRole, QColor("#0a7a28"))
             elif status_lower == "fail":
-                status_item.setForeground(QBrush(QColor("#b00020")))
-                #status_item.setData(Qt.ForegroundRole, QColor("#b00020"))
-                #print("Color rojo")
-            
+                status_item.setData(Qt.ForegroundRole, QColor("#b00020"))
             self.results_table.setItem(r, 2, status_item)
 
             self.results_table.setItem(r, 3, QTableWidgetItem(dil_val))
@@ -319,20 +313,33 @@ class MainWindow(QMainWindow):
         target_path = Path.cwd() / "Excel reports" / date.today().strftime("%Y%m%d")
         target_path.mkdir(parents=True, exist_ok=True)
 
+        self._show_loading_overlay("Generando reportes...")
         try:
             exported = ps_processing.export_samples_to_directory(self._last_samples, target_path)
         except Exception as exc:
+            self._hide_loading_overlay()
             QMessageBox.critical(self, "Reportes", f"No se pudieron generar los reportes.\n\n{exc}")
             return
 
-        if self._last_sample_metadata and not self._saved_to_db:
-            try:
+        try:
+            if not self._saved_to_db:
+                for sample in self._last_samples:
+                    meta = self._last_sample_metadata.setdefault(sample.sample, {})
+                    if not meta.get("processed_by"):
+                        meta["processed_by"] = self.user_email
+                    if not meta.get("client_name") and sample.sample_name:
+                        meta["client_name"] = sample.sample_name
+                    if not meta.get("sample_date") and sample.sample_date:
+                        meta["sample_date"] = sample.sample_date
+                self._overlay_label.setText("Guardando en Supabase...")
                 save_samples(self._last_samples, self._last_sample_metadata)
                 self._saved_to_db = True
-            except Exception as exc:
-                QMessageBox.critical(self, "Reportes", f"No se pudieron guardar los resultados.\n\n{exc}")
-                return
+        except Exception as exc:
+            self._hide_loading_overlay()
+            QMessageBox.critical(self, "Reportes", f"No se pudieron guardar los resultados.\n\n{exc}")
+            return
 
+        self._hide_loading_overlay()
         self._refresh_saved_records()
 
         QMessageBox.information(
@@ -340,7 +347,6 @@ class MainWindow(QMainWindow):
             "Reportes",
             f"Se generaron {len(exported)} reporte(s) en:\n{target_path}"
         )
-
     def _reset_form(self) -> None:
         self.edit_batches.clear()
         self._excel_path = None

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import re
@@ -16,10 +16,11 @@ class BatchProcessWorker(QObject):
     progressed = Signal(str)
     finished = Signal(bool, object, str)
 
-    def __init__(self, batches: List[str], excel_path: Path):
+    def __init__(self, batches: List[str], excel_path: Path, processor_email: str):
         super().__init__()
         self.batches = [b.strip() for b in batches if b.strip()]
         self.excel_path = Path(excel_path)
+        self.processor_email = processor_email
 
     def _collect_sample_info(self, client: QBenchClient, sample_date: str | None = None) -> Dict[str, Dict[str, object]]:
         sample_info: Dict[str, Dict[str, object]] = {}
@@ -45,12 +46,20 @@ class BatchProcessWorker(QObject):
                         tail_norm = normalize_sample_id_text(custom_id.split('-')[-1])
                         if tail_norm:
                             keys.add(tail_norm)
+                raw = row.get('_raw') if isinstance(row, dict) else None
+                client_name = row.get('client_name')
+                if not client_name and isinstance(raw, dict):
+                    client = raw.get('client') or {}
+                    if isinstance(client, dict):
+                        client_name = client.get('name')
                 info = {
                     'sample_weight': row.get('sample_weight'),
                     'sample_name': row.get('sample_name'),
                     'custom_formatted_id': row.get('custom_formatted_id'),
                     'batch_number': row.get('batch_number') or batch,
                     'sample_date': sample_date,
+                    'client_name': client_name,
+                    'processed_by': self.processor_email,
                 }
                 for key in keys:
                     if key and key not in sample_info:
